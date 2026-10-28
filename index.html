@@ -52,7 +52,7 @@
   'use strict';
   var $ = function (s) { return document.querySelector(s); };
   var REDIRECT = location.origin + location.pathname;
-  var SCOPES = 'user-read-playback-state user-modify-playback-state user-read-currently-playing';
+  var SCOPES = 'user-read-playback-state user-modify-playback-state user-read-currently-playing playlist-read-private playlist-read-collaborative';
   $('#redirect').textContent = REDIRECT;
 
   function rand(n) {
