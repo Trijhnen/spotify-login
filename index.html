@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Spotify koppelen voor het dashboard</title>
+<style>
+  body{margin:0;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;background:#150E2E;color:#fff;line-height:1.5}
+  main{max-width:36rem;margin:0 auto;padding:1.5rem 1rem 3rem}
+  h1{font-size:1.5rem;margin:.2rem 0 1rem}
+  .box{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:14px;padding:1rem;margin-bottom:1rem}
+  label{display:block;font-size:.9rem;color:#D6CCE6;margin-bottom:.3rem}
+  input{width:100%;box-sizing:border-box;font:inherit;padding:.7rem;border-radius:10px;border:1px solid rgba(255,255,255,.4);background:rgba(255,255,255,.08);color:#fff}
+  button{font:inherit;min-height:3rem;padding:0 1.2rem;border-radius:12px;border:0;background:#FFC857;color:#1A1405;font-weight:600;cursor:pointer}
+  button.ghost{background:transparent;color:#fff;border:1px solid rgba(255,255,255,.4)}
+  code{background:rgba(255,255,255,.12);padding:.1rem .4rem;border-radius:6px;word-break:break-all}
+  .muted{color:#D6CCE6;font-size:.9rem}
+  .err{color:#FF9C9C}
+  .row{display:flex;gap:.5rem;margin-top:.5rem}
+  .row input{flex:1}
+  [hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main>
+  <h1>Spotify koppelen voor het dashboard</h1>
+
+  <div id="start" class="box">
+    <p class="muted">Dit is een eenmalige stap. Na het inloggen krijg je een verversingssleutel die je in de instellingen van het dashboard plakt. Deze pagina bewaart niets.</p>
+    <p>1. Zet in je Spotify-app (developer.spotify.com/dashboard) deze <b>Redirect URI</b> neer, precies zoals hij hier staat:</p>
+    <p><code id="redirect"></code></p>
+    <p>2. Plak hieronder het <b>Client ID</b> van je Spotify-app:</p>
+    <label for="cid">Client ID</label>
+    <input id="cid" type="text" autocomplete="off" spellcheck="false">
+    <div class="row"><button id="login" type="button">Inloggen met Spotify</button></div>
+    <p id="msg" class="err" role="alert"></p>
+  </div>
+
+  <div id="done" class="box" hidden>
+    <p><b>Gelukt.</b> Plak deze twee waarden in de instellingen van het dashboard (tandwiel, onder Spotify):</p>
+    <label for="outCid">Client ID</label>
+    <div class="row"><input id="outCid" readonly><button class="ghost" data-copy="outCid" type="button">Kopieer</button></div>
+    <label for="outTok" style="margin-top:.8rem">Verversingssleutel</label>
+    <div class="row"><input id="outTok" readonly><button class="ghost" data-copy="outTok" type="button">Kopieer</button></div>
+    <p class="muted">Houd de verversingssleutel geheim, hij geeft toegang tot je Spotify-account. Je kunt de toegang altijd intrekken via spotify.com/account/apps.</p>
+  </div>
+</main>
+
+<script>
+(function () {
+  'use strict';
+  var $ = function (s) { return document.querySelector(s); };
+  var REDIRECT = location.origin + location.pathname;
+  var SCOPES = 'user-read-playback-state user-modify-playback-state user-read-currently-playing';
+  $('#redirect').textContent = REDIRECT;
+
+  function rand(n) {
+    var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+    var a = new Uint8Array(n); crypto.getRandomValues(a);
+    var s = ''; for (var i = 0; i < n; i++) s += chars[a[i] % chars.length];
+    return s;
+  }
+  function b64url(buf) {
+    var s = ''; new Uint8Array(buf).forEach(function (b) { s += String.fromCharCode(b); });
+    return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+  function fail(text) { $('#msg').textContent = text; }
+
+  $('#login').addEventListener('click', function () {
+    var cid = $('#cid').value.trim();
+    if (!cid) { fail('Vul eerst je Client ID in.'); return; }
+    if (location.protocol !== 'https:' && location.hostname !== '127.0.0.1') { fail('Deze pagina moet op https staan, zie de uitleg.'); return; }
+    var verifier = rand(96), state = rand(24);
+    crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)).then(function (hash) {
+      sessionStorage.setItem('sp.verifier', verifier);
+      sessionStorage.setItem('sp.state', state);
+      sessionStorage.setItem('sp.cid', cid);
+      var q = new URLSearchParams({
+        response_type: 'code', client_id: cid, scope: SCOPES, redirect_uri: REDIRECT,
+        state: state, code_challenge_method: 'S256', code_challenge: b64url(hash)
+      });
+      location.href = 'https://accounts.spotify.com/authorize?' + q.toString();
+    }, function () { fail('Deze browser kan de beveiligde inlog niet starten.'); });
+  });
+
+  document.querySelectorAll('[data-copy]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var el = document.getElementById(b.getAttribute('data-copy'));
+      el.select();
+      try { document.execCommand('copy'); b.textContent = 'Gekopieerd'; } catch (e) { b.textContent = 'Selecteer en kopieer zelf'; }
+    });
+  });
+
+  var p = new URLSearchParams(location.search);
+  if (p.get('error')) { fail('Spotify meldde: ' + p.get('error') + '. Probeer het opnieuw.'); history.replaceState(null, '', REDIRECT); }
+  else if (p.get('code')) {
+    var cid = sessionStorage.getItem('sp.cid') || '';
+    var verifier = sessionStorage.getItem('sp.verifier') || '';
+    if (p.get('state') !== sessionStorage.getItem('sp.state')) { fail('De inlog is niet herkend (state klopt niet). Begin opnieuw.'); history.replaceState(null, '', REDIRECT); }
+    else {
+      $('#msg').textContent = 'Bezig met afronden...';
+      fetch('https://accounts.spotify.com/api/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ client_id: cid, grant_type: 'authorization_code', code: p.get('code'), redirect_uri: REDIRECT, code_verifier: verifier }).toString()
+      }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+        .then(function (res) {
+          history.replaceState(null, '', REDIRECT);
+          sessionStorage.removeItem('sp.verifier'); sessionStorage.removeItem('sp.state'); sessionStorage.removeItem('sp.cid');
+          if (!res.ok || !res.j.refresh_token) { fail('Spotify gaf een fout: ' + ((res.j && (res.j.error_description || res.j.error)) || 'onbekend') + '. Controleer Client ID en Redirect URI.'); return; }
+          $('#msg').textContent = '';
+          $('#start').hidden = true; $('#done').hidden = false;
+          $('#outCid').value = cid; $('#outTok').value = res.j.refresh_token;
+        })
+        .catch(function () { fail('Er ging iets mis bij het ophalen van de sleutel. Probeer het opnieuw.'); });
+    }
+  }
+})();
+</script>
+</body>
+</html>
